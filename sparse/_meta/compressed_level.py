@@ -5,7 +5,7 @@ from numba.core import types, cgutils, extending
 from numba.core.datamodel import registry, models
 from .sparsedim import PositionIterable, AppendAssembly
 from .sparsedim import PositionIterableType, AppendAssemblyType
-from typing import Sequence, List, Tuple
+from typing import Sequence, List, Tuple, Iterable, Callable
 
 
 class Compressed(PositionIterable, AppendAssembly):
@@ -47,7 +47,10 @@ class Compressed(PositionIterable, AppendAssembly):
         return True
 
     def pos_bounds(self, pkm1: int) -> Tuple[int, int]:
-        return self.pos[pkm1], self.pos[pkm1 + 1]
+        return (self.pos[pkm1], self.pos[pkm1 + 1])
+
+    def pos_iter(self, pkm1: int) -> Iterable[int]:
+        return range(self.pos[pkm1], self.pos[pkm1 + 1])
 
     def pos_access(self, pk: int, i: Tuple[int, ...]) -> Tuple[int, bool]:
         return self.crd[pk], True
@@ -68,6 +71,9 @@ class Compressed(PositionIterable, AppendAssembly):
             cumsum += self.pos[pkm1]
             self.pos[pkm1] = cumsum
 
+    def size(self) -> int:
+        return len(self.crd)
+
 
 class CompressedType(PositionIterableType, AppendAssemblyType):
 
@@ -77,11 +83,11 @@ class CompressedType(PositionIterableType, AppendAssemblyType):
     def __init__(
         self,
         *,
+        pos_type: types.Integer,
+        crd_type: types.Integer,
         full: bool,
         ordered: bool,
         unique: bool,
-        pos_type: types.Integer,
-        crd_type: types.Integer,
     ):
         if not isinstance(pos_type, types.Integer):
             raise TypeError("pos_type must be a numba.types.Integer.")
@@ -89,11 +95,11 @@ class CompressedType(PositionIterableType, AppendAssemblyType):
         if not isinstance(crd_type, types.Integer):
             raise TypeError("crd_type must be a numba.types.Integer.")
 
+        self._pos_type: types.Integer = pos_type
+        self._crd_type: types.Integer = crd_type
         self._full: bool = bool(full)
         self._ordered: bool = bool(ordered)
         self._unique: bool = bool(unique)
-        self._pos_type: types.Integer = pos_type
-        self._crd_type: types.Integer = crd_type
         name: str = f"Compressed<{pos_type}, {crd_type}>"
         super().__init__(name)
 
@@ -145,11 +151,11 @@ def type_compressed(context):
     def typer(full, ordered, unique, pos, crd):
         # pos and crd are TypedLists
         return CompressedType(
+            pos_type=pos.dtype,
+            crd_type=crd.dtype,
             full=full,
             ordered=ordered,
             unique=unique,
-            pos_type=pos.dtype,
-            crd_type=crd.dtype,
         )
 
     return typer
@@ -177,28 +183,33 @@ def impl_pos_bounds(self, pkm1: int) -> Tuple[int, int]:
     return Compressed.pos_bounds
 
 
+@extending.overload_method(CompressedType, "pos_iter")
+def impl_pos_iter(self, pkm1: int) -> Tuple[int, int]:
+    return Compressed.pos_iter
+
+
 @extending.overload_method(CompressedType, "pos_access")
 def impl_pos_access(self, pk: int, i: Tuple[int, ...]) -> Tuple[int, bool]:
     return Compressed.pos_access
 
 
 @extending.overload_method(CompressedType, "append_coord")
-def impl_append_coord(self, pk: int, ik: int) -> None:
+def impl_append_coord(self, pk: int, ik: int) -> Callable:
     return Compressed.append_coord
 
 
 @extending.overload_method(CompressedType, "append_edges")
-def impl_append_edges(self, pkm1: int, pkbegin: int, pkend: int) -> None:
+def impl_append_edges(self, pkm1: int, pkbegin: int, pkend: int) -> Callable:
     return Compressed.append_edges
 
 
 @extending.overload_method(CompressedType, "append_init")
-def impl_append_init(self, szkm1: int, szk: int) -> None:
+def impl_append_init(self, szkm1: int, szk: int) -> Callable:
     return Compressed.append_init
 
 
 @extending.overload_method(CompressedType, "append_finalize")
-def impl_append_finalize(self, szkm1: int, szk: int) -> None:
+def impl_append_finalize(self, szkm1: int, szk: int) -> Callable:
     return Compressed.append_finalize
 
 

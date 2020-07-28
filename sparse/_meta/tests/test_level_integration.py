@@ -3,6 +3,7 @@ from numba import typed
 
 from sparse._meta.compressed_level import Compressed
 from sparse._meta.dense_level import Dense
+from typing import Tuple
 
 
 @njit
@@ -15,8 +16,9 @@ def mul_sparse_dense_1d(
     data_out: typed.List,
 ):
     out.append_init(1, 100)
-    pbegin1c, pend1c = c.pos_bounds(0)
-    for p_c1 in range(pbegin1c, pend1c):
+    pos_iter = c.pos_iter(0)
+    pbeginc = 0
+    for p_c1 in pos_iter:
         i_c1, found_c1 = c.pos_access(p_c1, ())
         p_d1, found_d1 = d.locate(0, (i_c1,))
         if found_c1 and found_d1:
@@ -24,7 +26,8 @@ def mul_sparse_dense_1d(
             data_c = c_data[p_c1]
             data_d = d_data[p_d1]
             data_out.append(data_c * data_d)
-    out.append_edges(0, pbegin1c, pend1c)
+    pendc = p_c1 + 1
+    out.append_edges(0, pbeginc, pendc)
     out.append_finalize(1, 100)
 
 
